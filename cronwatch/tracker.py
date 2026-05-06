@@ -1,25 +1,26 @@
-"""Job execution tracker that records run history and detects failures."""
+"""Tracks in-progress and completed cron job runs."""
 
-import time
-from dataclasses import dataclass, field
-from typing import Optional
+from __future__ import annotations
+
+import threading
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
 
 
-@dataclass
 class JobRun:
-    """Represents a single execution record of a cron job."""
+    """Record of a single execution of a cron job."""
 
-    job_name: str
-    started_at: float
-    finished_at: Optional[float] = None
-    exit_code: Optional[int] = None
-    output: Optional[str] = None
+    def __init__(self) -> None:
+        self.started_at: Optional[datetime] = None
+        self.finished_at: Optional[datetime] = None
+        self.exit_code: Optional[int] = None
 
     @property
     def duration(self) -> Optional[float]:
-        if self.finished_at is not None:
-            return self.finished_at - self.started_at
-        return None
+        """Wall-clock seconds between start and finish, or None if incomplete."""
+        if self.started_at is None or self.finished_at is None:
+            return None
+        return (self.finished_at - self.started_at).total_seconds()
 
     @property
     def succeeded(self) -> bool:
@@ -31,55 +32,56 @@ class JobRun:
 
     @property
     def is_running(self) -> bool:
-        return self.finished_at is None
+        return self.started_at is not None and self.finished_at is None
 
 
 class JobTracker:
-    """Tracks job execution history in memory."""
+    """Thread-safe tracker for job runs across multiple named jobs."""
 
-    def __init__(self, max_history: int = 100):
-        self._max_history = max_history
-        self._history: dict[str, list[JobRun]] = {}
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._runs: Dict[str, List[JobRun]] = {}
 
     def start_run(self, job_name: str) -> JobRun:
-        """Record the start of a job execution."""
-        run = JobRun(job_name=job_name, started_at=time.time())
-        if job_name not in self._history:
-            self._history[job_name] = []
-        self._history[job_name].append(run)
-        if len(self._history[job_name]) > self._max_history:
-            self._history[job_name].pop(0)
+        """Record that *job_name* has started; returns the new JobRun."""
+        run = JobRun()
+        run.started_at = datetime.now(tz=timezone.utc)
+        with self._lock:
+            self._runs.setdefault(job_name, []).append(run)
         return run
 
-    def finish_run(
-        self,
-        run: JobRun,
-        exit_code: int,
-        output: Optional[str] = None,
-    ) -> None:
-        """Record the completion of a job execution."""
-        run.finished_at = time.time()
-        run.exit_code = exit_code
-        run.output = output
+    def finish_run(self, job_name: str, exit_code: int) -> Optional[JobRun]:
+        """Mark the most recent in-progress run for *job_name* as finished."""
+        with self._lock:
+            for run in reversed(self._runs.get(job_name, [])):
+                if run.is_running:
+                    run.finished_at = datetime.now(tz=timezone.utc)
+                    run.exit_code = exit_code
+                    return run
+        return None
+
+    def current_run(self, job_name: str) -> Optional[JobRun]:
+        """Return the active (unfinished) run for *job_name*, or None."""
+        with self._lock:
+            for run in reversed(self._runs.get(job_name, [])):
+                if run.is_running:
+                    return run
+        return None
+
+    def all_runs(self, job_name: str) -> List[JobRun]:
+        """Return all recorded runs for *job_name* (oldest first)."""
+        with self._lock:
+            return list(self._runs.get(job_name, []))
 
     def last_run(self, job_name: str) -> Optional[JobRun]:
-        """Return the most recent completed run for a job."""
-        runs = self._history.get(job_name, [])
-        completed = [r for r in runs if not r.is_running]
-        return completed[-1] if completed else None
+        """Return the most recently *completed* run for *job_name*, or None."""
+        with self._lock:
+            for run in reversed(self._runs.get(job_name, [])):
+                if not run.is_running:
+                    return run
+        return None
 
-    def recent_runs(self, job_name: str, limit: int = 10) -> list[JobRun]:
-        """Return the most recent runs for a job."""
-        runs = self._history.get(job_name, [])
-        return runs[-limit:]
-
-    def failure_streak(self, job_name: str) -> int:
-        """Return the number of consecutive failures for a job."""
-        runs = [r for r in self._history.get(job_name, []) if not r.is_running]
-        streak = 0
-        for run in reversed(runs):
-            if run.failed:
-                streak += 1
-            else:
-                break
-        return streak
+    def known_jobs(self) -> List[str]:
+        """Return names of all jobs that have at least one recorded run."""
+        with self._lock:
+            return list(self._runs.keys())
