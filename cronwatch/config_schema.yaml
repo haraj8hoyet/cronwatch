@@ -1,0 +1,38 @@
+# cronwatch configuration example
+
+log_file: /var/log/cronwatch.log
+state_file: /var/lib/cronwatch/state.json
+check_interval: 60
+
+alert:
+  email: ops@example.com
+  smtp_host: smtp.example.com
+  smtp_port: 587
+  smtp_user: alerts@example.com
+  smtp_password: secret
+  from_address: cronwatch@example.com
+
+jobs:
+  - name: daily_backup
+    schedule: "0 2 * * *"
+    command: /usr/local/bin/backup.sh
+    timeout: 600
+    alert_on_failure: true
+    alert_on_missed: true
+    max_retries: 1
+
+  - name: hourly_cleanup
+    schedule: "0 * * * *"
+    command: /usr/local/bin/cleanup.sh
+    timeout: 120
+    alert_on_failure: true
+    alert_on_missed: false
+    max_retries: 0
+
+  - name: weekly_report
+    schedule: "0 8 * * 1"
+    command: /usr/local/bin/report.sh
+    timeout: 300
+    alert_on_failure: true
+    alert_on_missed: true
+    max_retries: 2
