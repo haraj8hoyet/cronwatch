@@ -37,6 +37,14 @@ def test_touch_updates_last_seen():
     assert record.last_seen is not None
 
 
+def test_record_stale_exactly_at_grace_boundary():
+    """A record touched exactly grace_seconds ago should be considered stale."""
+    record = HeartbeatRecord(job_name="backup", grace_seconds=60)
+    now = datetime.utcnow()
+    record.touch(at=now - timedelta(seconds=60))
+    assert record.is_stale(now=now) is True
+
+
 # ---------------------------------------------------------------------------
 # HeartbeatMonitor
 # ---------------------------------------------------------------------------
@@ -85,3 +93,13 @@ def test_fresh_job_not_stale(monitor):
     stale = monitor.stale_jobs(now=now)
     assert "job_a" not in stale
     assert "job_b" in stale
+
+
+def test_touch_advances_last_seen(monitor):
+    """Calling touch twice should update last_seen to the more recent timestamp."""
+    now = datetime.utcnow()
+    earlier = now - timedelta(seconds=50)
+    monitor.touch("job_a", at=earlier)
+    monitor.touch("job_a", at=now)
+    record = monitor._records["job_a"]
+    assert record.last_seen == now
