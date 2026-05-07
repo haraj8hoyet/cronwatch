@@ -85,3 +85,21 @@ class JobTracker:
         """Return names of all jobs that have at least one recorded run."""
         with self._lock:
             return list(self._runs.keys())
+
+    def clear_runs(self, job_name: str) -> int:
+        """Remove all recorded runs for *job_name*.
+
+        Only completed runs are removed; any currently in-progress run is
+        left in place so that :meth:`finish_run` can still find it.
+
+        Returns the number of runs that were removed.
+        """
+        with self._lock:
+            runs = self._runs.get(job_name, [])
+            kept = [r for r in runs if r.is_running]
+            removed = len(runs) - len(kept)
+            if kept:
+                self._runs[job_name] = kept
+            elif job_name in self._runs:
+                del self._runs[job_name]
+        return removed
