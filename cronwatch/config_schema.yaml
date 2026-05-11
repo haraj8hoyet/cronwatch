@@ -1,38 +1,84 @@
-# cronwatch configuration example
-
-log_file: /var/log/cronwatch.log
-state_file: /var/lib/cronwatch/state.json
-check_interval: 60
-
-alert:
-  email: ops@example.com
-  smtp_host: smtp.example.com
-  smtp_port: 587
-  smtp_user: alerts@example.com
-  smtp_password: secret
-  from_address: cronwatch@example.com
-
-jobs:
-  - name: daily_backup
-    schedule: "0 2 * * *"
-    command: /usr/local/bin/backup.sh
-    timeout: 600
-    alert_on_failure: true
-    alert_on_missed: true
-    max_retries: 1
-
-  - name: hourly_cleanup
-    schedule: "0 * * * *"
-    command: /usr/local/bin/cleanup.sh
-    timeout: 120
-    alert_on_failure: true
-    alert_on_missed: false
-    max_retries: 0
-
-  - name: weekly_report
-    schedule: "0 8 * * 1"
-    command: /usr/local/bin/report.sh
-    timeout: 300
-    alert_on_failure: true
-    alert_on_missed: true
-    max_retries: 2
+type: object
+required:
+  - jobs
+properties:
+  jobs:
+    type: array
+    minItems: 1
+    items:
+      type: object
+      required:
+        - name
+        - schedule
+      properties:
+        name:
+          type: string
+        schedule:
+          type: string
+        timeout:
+          type: integer
+          minimum: 1
+        tags:
+          type: array
+          items:
+            type: string
+  alerts:
+    type: object
+    properties:
+      email:
+        type: object
+        properties:
+          to:
+            type: string
+          from:
+            type: string
+          smtp_host:
+            type: string
+          smtp_port:
+            type: integer
+      webhooks:
+        type: array
+        items:
+          oneOf:
+            - type: string
+            - type: object
+              required:
+                - url
+              properties:
+                url:
+                  type: string
+                timeout:
+                  type: integer
+                  minimum: 1
+                secret_header:
+                  type: string
+                secret_value:
+                  type: string
+                headers:
+                  type: object
+                  additionalProperties:
+                    type: string
+      suppress:
+        type: array
+        items:
+          oneOf:
+            - type: string
+            - type: object
+              required:
+                - pattern
+              properties:
+                pattern:
+                  type: string
+                reason:
+                  type: string
+      cooldown_minutes:
+        type: integer
+        minimum: 0
+      escalation:
+        type: object
+        properties:
+          threshold:
+            type: integer
+            minimum: 1
+          contact:
+            type: string
