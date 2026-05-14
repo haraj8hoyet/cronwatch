@@ -1,45 +1,33 @@
-"""Dispatcher that routes AlertEvents to one or more notification channels."""
+"""Dispatcher: fan-out an AlertEvent to all registered notification channels."""
 
 from __future__ import annotations
 
-import logging
-from typing import Iterable
+from typing import List
 
 from cronwatch.alerter import AlertEvent
 from cronwatch.notifier import NotificationChannel
 
-logger = logging.getLogger(__name__)
-
 
 class Dispatcher:
-    """Sends an AlertEvent through all registered channels."""
+    """Sends an AlertEvent to every registered NotificationChannel.
 
-    def __init__(self, channels: Iterable[NotificationChannel] | None = None) -> None:
-        self._channels: list[NotificationChannel] = list(channels or [])
+    Each channel's ``send`` method is called in registration order.  The
+    overall result is ``True`` if *at least one* channel returned ``True``.
+    """
+
+    def __init__(self) -> None:
+        self._channels: List[NotificationChannel] = []
 
     def register(self, channel: NotificationChannel) -> None:
-        """Add a notification channel."""
+        """Append *channel* to the dispatch list."""
         self._channels.append(channel)
 
-    def dispatch(self, event: AlertEvent) -> dict[str, bool]:
-        """Dispatch *event* to all channels.
-
-        Returns a mapping of channel class name -> success bool.
-        """
-        results: dict[str, bool] = {}
-        if not self._channels:
-            logger.warning("No notification channels registered; alert dropped.")
-            return results
-        for channel in self._channels:
-            name = type(channel).__name__
-            try:
-                ok = channel.send(event)
-            except Exception as exc:  # noqa: BLE001
-                logger.error("Channel %s raised an exception: %s", name, exc)
-                ok = False
-            results[name] = ok
-        return results
+    def dispatch(self, event: AlertEvent) -> bool:
+        """Send *event* to all channels.  Returns True if any channel succeeded."""
+        results = [ch.send(event) for ch in self._channels]
+        return any(results)
 
     @property
     def channel_count(self) -> int:
+        """Number of registered channels."""
         return len(self._channels)
