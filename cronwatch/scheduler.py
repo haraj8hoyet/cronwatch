@@ -33,6 +33,15 @@ class MissedRunDetector:
         cron = croniter(self.job.schedule, now)
         return cron.get_next(datetime)
 
+    def seconds_until_next_run(self, now: Optional[datetime] = None) -> float:
+        """Return the number of seconds until the next scheduled run.
+
+        Useful for logging or scheduling wake-up timers.
+        """
+        if now is None:
+            now = datetime.utcnow()
+        return (self.next_expected_run(now) - now).total_seconds()
+
     def is_missed(self, last_seen: Optional[datetime], now: Optional[datetime] = None) -> bool:
         """Return True when the job has not run within its expected window.
 
