@@ -61,3 +61,16 @@ class AlertThrottle:
     def reset(self, job_name: str) -> None:
         """Clear throttle state for a job (e.g. after a successful run)."""
         self._entries.pop(job_name, None)
+
+    def time_until_next_alert(self, job_name: str, now: Optional[float] = None) -> Optional[float]:
+        """Return seconds remaining in the cooldown period for a job.
+
+        Returns 0.0 if the job is not currently throttled, and None if no
+        alert has ever been sent for the job.
+        """
+        entry = self._entries.get(job_name)
+        if entry is None:
+            return None
+        now = now if now is not None else time.time()
+        remaining = self.cooldown_seconds - (now - entry.last_alert_at)
+        return max(0.0, remaining)
