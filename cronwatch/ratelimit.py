@@ -38,6 +38,19 @@ class RateLimitEntry:
         self._evict_expired(time.monotonic())
         return len(self._timestamps)
 
+    def seconds_until_next_allowed(self, now: float | None = None) -> float:
+        """Return seconds until an alert is allowed, or 0.0 if already allowed.
+
+        Useful for surfacing back-off information in log messages or dashboards.
+        """
+        now = now if now is not None else time.monotonic()
+        self._evict_expired(now)
+        if len(self._timestamps) < self.max_alerts:
+            return 0.0
+        # The oldest timestamp in the window is the one that will expire first.
+        oldest = self._timestamps[0]
+        return max(0.0, oldest + self.window_seconds - now)
+
 
 class AlertRateLimiter:
     """Registry of per-job rate-limit entries.
@@ -75,6 +88,10 @@ class AlertRateLimiter:
     def current_count(self, job_name: str) -> int:
         """Return the number of alerts recorded in the current window."""
         return self._entry(job_name).current_count
+
+    def seconds_until_next_allowed(self, job_name: str, now: float | None = None) -> float:
+        """Return seconds until *job_name* may send another alert, or 0.0 if already allowed."""
+        return self._entry(job_name).seconds_until_next_allowed(now)
 
     def reset(self, job_name: str) -> None:
         """Clear rate-limit state for *job_name*."""
